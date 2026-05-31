@@ -1,0 +1,19 @@
+# Large data files (1.5GB+)
+data/
+
+# Log files (280MB+)
+logs/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Archives
+*.zip
+
+# Browser binary
+chromedriver
+
+# Telegram cache
+Telegram Desktop/

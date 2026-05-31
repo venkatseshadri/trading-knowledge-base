@@ -1,0 +1,6 @@
+# m1 (MCX) - Start at 5:00 PM IST (11:30 UTC), Kill at 11:30 PM IST (18:00 UTC)
+30 11 * * 1,2,3,4,5 cd /home/trading_ceo/python-trader && PYTHONPATH=/home/trading_ceo/python-trader nohup python3 orbiter/main.py --strategyCode=m1 --paper-trade > /tmp/orbiter_m1.log 2>&1 &
+0 18 * * 1,2,3,4,5 pkill -f strategyCode=m1 >> /tmp/mcx_shutdown.log 2>&1
+
+# Health check - restart if not running (every 30 mins)
+*/30 * * * * pgrep -f orbiter/main.py || cd /home/trading_ceo/python-trader && PYTHONPATH=/home/trading_ceo/python-trader nohup python3 orbiter/main.py --strategyCode=m1 --paper-trade > /tmp/orbiter_restart.log 2>&1
