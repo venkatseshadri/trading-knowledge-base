@@ -19,3 +19,10 @@ chromedriver
 Telegram Desktop/
 snap/
 sandwich/
+*.log
+*.csv
+*.sqlite
+*.tar.gz
+*.db
+__pycache__/
+*.parquet

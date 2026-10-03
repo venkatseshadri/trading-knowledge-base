@@ -1,6 +1,6 @@
 # Penguin Data Pipeline Architecture
 
-Updated: 2026-05-29 | Status: Production (NIFTY, SENSEX, MCX)
+Updated: 2026-06-03 | Status: Production (NIFTY, SENSEX, MCX)
 
 ## Overview
 
@@ -146,3 +146,49 @@ read the warehouse for backtests and post-market analysis.
 | `run_data_capture_with_v4.sh` (watchdog) | Redundant — cron handles v4, systemd removed |
 | `instrument_consumer.py` Redis dual-write | Removed — was polluting v3_ohlcv_queue with indicator-less bars |
 | `varaha_data.duckdb` (v3.1 capture) | Replaced by Penguin SQLite + EOD warehouse |
+
+## MCX — Multi-Instrument Feed (Known Issue)
+
+Unlike NIFTY/SENSEX which deliver one 1-min OHLCV bar per minute, the MCX feed
+carries **~6-7 instruments per tick** (different commodity contracts in the same
+WebSocket feed). Each gets its own row in `market_data`:
+
+```
+NIFTY/SENSEX:  1 row per minute → 1 enriched row per minute → clean 1.0x ratio
+MCX:           6-7 rows per minute → 855 enriched rows (with gaps + corrupt values)
+```
+
+**Impact:** The enricher does NOT separate MCX by instrument/contract. It computes
+indicators across mixed scrips, producing nonsensical values (e.g., `spot=317.8`
+yet `open_price=156,316`, `gap_pct=42,749%`). The raw `market_data` capture is
+correct — only the enriched layer is broken.
+
+**Fix needed:** Instrument-level separation before enrichment, or feed change to
+emit per-contract 1-min bars.
+
+## Enricher Coverage Gaps (measured Jun 1, 477 rows NIFTY)
+
+| Column group | Coverage | Status |
+|---|---|---|
+| spot, ema_5/20/50, rsi, adx, atr, vwap, atm_strike | 91-100% | ✅ Working |
+| india_vix, agg_delta/greeks, iv_current | ~29% | ⚠️ Option chain fetch path mostly failing |
+| expiry_weekly, pivot_pp, pcr_total, sentiment | 0% → now fixed | ✅ Pivots + expiry fixed 2026-06-03 |
+| PCR/sentiment/VIX/greeks/IV | Option-chain-gated at 0-29% | ⚠️ Needs live-hours market-open debugging |
+
+## Varaha DuckDB Migration — Current State
+
+The migration repoints Brahmand agents from the dead `varaha_data.duckdb` to
+Penguin SQLite + EOD DuckDB warehouse. See `brahmand/docs/PENGUIN_REPOINT_LOG.md`.
+
+| Status | Count | Components |
+|--------|-------|-----------|
+| ✅ Repointed | 1 | `ema_backfill.py` |
+| ⬜ Pending simple repoints | 5 | `margin_capture.py`, `entry_signal_broker.py`, `research_agents_full_db.py`, `nightly_research_scheduler.py`, `data_health.py` |
+| 🔒 HELD (risk/option) | 2 | `wing_optimizer.py`, `risk_tools.py` |
+| 🚫 BLOCKED | 1 | `research_agents.py` (needs `market_data_patterns`/`trade_outcomes`) |
+| 🔗 Collateral | 1 | `pattern_enricher.py` (reads from varaha_data.duckdb, chained dep) |
+
+**Key blockers:**
+- No `option_snapshots` equivalent in Penguin (only per-strike LTP)
+- Pattern/trade_outcome tables are chained — must migrate the writer first
+- Multi-TF duplication: consumer + v4 aggregator both produce multi-TF OHLCV
